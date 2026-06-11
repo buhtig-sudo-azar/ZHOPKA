@@ -532,7 +532,7 @@ export default function Home() {
                               subtitle={generatedContent?.subtitle || ''}
                               features={generatedContent?.features || []}
                               style={productInput.style || 'minimalism'}
-                              badge={selectedBadge === 'none' ? null : selectedBadge}
+                              badge={selectedBadge === 'none' ? undefined : selectedBadge}
                             />
                           </div>
                         </div>
