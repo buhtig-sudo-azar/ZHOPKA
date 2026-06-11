@@ -163,7 +163,7 @@ export default function Home() {
       })
       const data = await res.json()
       if (data.available) {
-        toast({ title: 'Ключ валиден', description: `Модель доступна, задержка: ${data.latency}мс` })
+        toast({ title: 'Ключ валиден', description: 'API ключ OpenRouter работает корректно' })
       } else {
         toast({ title: 'Проблема с ключом', description: data.reason || 'Ключ не прошёл проверку', variant: 'destructive' })
       }
@@ -634,9 +634,6 @@ export default function Home() {
                                 <MinusCircle className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                               )}
                               <span className="truncate flex-1">{m.label}</span>
-                              {rl?.latency && (
-                                <span className="text-[9px] text-muted-foreground shrink-0">{rl.latency}мс</span>
-                              )}
                               {currentModel === m.id && (
                                 <span className="text-[9px] text-primary shrink-0">&#9679;</span>
                               )}

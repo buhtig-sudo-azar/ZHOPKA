@@ -14,7 +14,6 @@ export interface ModelRateLimit {
   remaining?: number
   limit?: number
   reset?: number
-  latency?: number
   checkedAt?: number
 }
 
@@ -121,7 +120,6 @@ export const useModelStore = create<ModelStoreState>((set, get) => ({
         remaining: data.rateLimit?.remaining,
         limit: data.rateLimit?.limit,
         reset: data.rateLimit?.reset,
-        latency: data.latency,
         checkedAt: Date.now(),
       }
       get().setRateLimit(modelId, info)
