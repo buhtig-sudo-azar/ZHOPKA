@@ -35,7 +35,6 @@ import { useModelStore } from '@/store/model-store'
 import ProductCard from '@/components/product-card'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { ModelSelector } from '@/components/settings/ModelSelector'
-import { AIAssistantChat } from '@/components/chat/AIAssistantChat'
 
 const CATEGORIES = [
   { value: 'electronics', label: 'Электроника' },
@@ -585,8 +584,6 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* AI Chat Assistant */}
-      <AIAssistantChat />
     </div>
   )
 }

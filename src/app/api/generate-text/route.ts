@@ -151,6 +151,12 @@ export async function POST(request: Request) {
 
         clearTimeout(timeout)
 
+        if (response.status === 401 || response.status === 403) {
+          // Auth error — no point trying other models with the same bad key
+          console.error(`[generate-text] Auth error (${response.status}) — API ключ невалиден`)
+          return jsonRes({ error: 'API ключ невалиден. Проверьте ключ в настройках модели.' }, 401)
+        }
+
         if (response.status === 429 || response.status === 404) {
           // Rate limited or not found, try next model
           console.warn(`[generate-text] Model ${model} returned ${response.status}, trying next...`)
