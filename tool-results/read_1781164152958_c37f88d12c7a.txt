@@ -1,0 +1,590 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useRef, useState } from 'react'
+     4→import { motion } from 'framer-motion'
+     5→import {
+     6→  Sparkles,
+     7→  Upload,
+     8→  Download,
+     9→  RefreshCw,
+    10→  X,
+    11→  CheckCircle2,
+    12→  Loader2,
+    13→  ImageIcon,
+    14→  Type,
+    15→  ShoppingBag,
+    16→} from 'lucide-react'
+    17→
+    18→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+    19→import { Button } from '@/components/ui/button'
+    20→import { Input } from '@/components/ui/input'
+    21→import { Textarea } from '@/components/ui/textarea'
+    22→import { Label } from '@/components/ui/label'
+    23→import { Badge } from '@/components/ui/badge'
+    24→import { Separator } from '@/components/ui/separator'
+    25→import {
+    26→  Select,
+    27→  SelectContent,
+    28→  SelectItem,
+    29→  SelectTrigger,
+    30→  SelectValue,
+    31→} from '@/components/ui/select'
+    32→import { useToast } from '@/hooks/use-toast'
+    33→import { useGeneratorStore } from '@/lib/store'
+    34→import { useModelStore } from '@/store/model-store'
+    35→import ProductCard from '@/components/product-card'
+    36→import { ThemeToggle } from '@/components/theme-toggle'
+    37→import { ModelSelector } from '@/components/settings/ModelSelector'
+    38→
+    39→const CATEGORIES = [
+    40→  { value: 'electronics', label: 'Электроника' },
+    41→  { value: 'clothing', label: 'Одежда' },
+    42→  { value: 'beauty', label: 'Красота' },
+    43→  { value: 'home', label: 'Дом и сад' },
+    44→  { value: 'sport', label: 'Спорт' },
+    45→  { value: 'food', label: 'Еда' },
+    46→  { value: 'toys', label: 'Игрушки' },
+    47→  { value: 'auto', label: 'Авто' },
+    48→  { value: 'books', label: 'Книги' },
+    49→  { value: 'other', label: 'Другое' },
+    50→]
+    51→
+    52→const STYLES = [
+    53→  { value: 'minimalism', label: 'Минимализм' },
+    54→  { value: 'premium', label: 'Премиум' },
+    55→  { value: 'fun', label: 'Весёлый' },
+    56→  { value: 'elegant', label: 'Элегантный' },
+    57→  { value: 'sporty', label: 'Спортивный' },
+    58→  { value: 'strict', label: 'Строгий' },
+    59→]
+    60→
+    61→const BADGE_OPTIONS = [
+    62→  { value: 'none', label: 'Без бейджа' },
+    63→  { value: 'Хит продаж', label: 'Хит продаж' },
+    64→  { value: 'Новинка', label: 'Новинка' },
+    65→  { value: 'Лучшая цена', label: 'Лучшая цена' },
+    66→  { value: 'Топ выбор', label: 'Топ выбор' },
+    67→  { value: 'Эксклюзив', label: 'Эксклюзив' },
+    68→]
+    69→
+    70→export default function Home() {
+    71→  const { toast } = useToast()
+    72→  const fileInputRef = useRef<HTMLInputElement>(null)
+    73→  const cardRef = useRef<HTMLDivElement>(null)
+    74→  const previewWrapperRef = useRef<HTMLDivElement>(null)
+    75→  const [isDragOver, setIsDragOver] = useState(false)
+    76→  const [selectedBadge, setSelectedBadge] = useState('none')
+    77→  const [isDownloading, setIsDownloading] = useState(false)
+    78→  const [cardScale, setCardScale] = useState(1)
+    79→  const [usedModel, setUsedModel] = useState<string | null>(null)
+    80→
+    81→  const {
+    82→    productInput,
+    83→    setProductInput,
+    84→    isGeneratingText,
+    85→    generatedContent,
+    86→    generatedImages,
+    87→    setGeneratingText,
+    88→    setGeneratedContent,
+    89→    updateContentField,
+    90→    resetResults,
+    91→  } = useGeneratorStore()
+    92→
+    93→  // Get model and token from model-store
+    94→  const { currentModel, apiToken } = useModelStore()
+    95→
+    96→  const isGenerating = isGeneratingText
+    97→  const hasResults = generatedContent || generatedImages.length > 0 || productInput.uploadedImage
+    98→  const isCardVisible = generatedContent && productInput.uploadedImage
+    99→
+   100→  // Масштабирование карточки — пересчитываем при любом изменении размера и при появлении карточки
+   101→  useEffect(() => {
+   102→    const updateScale = () => {
+   103→      if (previewWrapperRef.current) {
+   104→        const containerWidth = previewWrapperRef.current.offsetWidth
+   105→        setCardScale(containerWidth / 900)
+   106→      }
+   107→    }
+   108→
+   109→    updateScale()
+   110→
+   111→    const observer = new ResizeObserver(updateScale)
+   112→    if (previewWrapperRef.current) {
+   113→      observer.observe(previewWrapperRef.current)
+   114→    }
+   115→
+   116→    return () => observer.disconnect()
+   117→  }, [isCardVisible])
+   118→
+   119→  const handleImageUpload = useCallback(
+   120→    (file: File) => {
+   121→      if (!file.type.startsWith('image/')) {
+   122→        toast({ title: 'Ошибка', description: 'Загрузите изображение (jpg, png, webp)', variant: 'destructive' })
+   123→        return
+   124→      }
+   125→      if (file.size > 10 * 1024 * 1024) {
+   126→        toast({ title: 'Ошибка', description: 'Размер файла не должен превышать 10 МБ', variant: 'destructive' })
+   127→        return
+   128→      }
+   129→      const reader = new FileReader()
+   130→      reader.onload = (e) => {
+   131→        const base64 = e.target?.result as string
+   132→        setProductInput({ uploadedImage: base64, uploadedImageName: file.name })
+   133→      }
+   134→      reader.readAsDataURL(file)
+   135→    },
+   136→    [setProductInput, toast]
+   137→  )
+   138→
+   139→  const handleDrop = useCallback((e: React.DragEvent) => {
+   140→    e.preventDefault()
+   141→    setIsDragOver(false)
+   142→    const file = e.dataTransfer.files[0]
+   143→    if (file) handleImageUpload(file)
+   144→  }, [handleImageUpload])
+   145→
+   146→  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true) }, [])
+   147→  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false) }, [])
+   148→  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+   149→    const file = e.target.files?.[0]
+   150→    if (file) handleImageUpload(file)
+   151→  }, [handleImageUpload])
+   152→
+   153→  const removeUploadedImage = useCallback(() => {
+   154→    setProductInput({ uploadedImage: null, uploadedImageName: null })
+   155→    if (fileInputRef.current) fileInputRef.current.value = ''
+   156→  }, [setProductInput])
+   157→
+   158→  const productImageForCard = productInput.uploadedImage
+   159→
+   160→  const handleGenerate = useCallback(async () => {
+   161→    if (!productInput.productName.trim()) {
+   162→      toast({ title: 'Укажите название товара', description: 'Название обязательно для генерации', variant: 'destructive' })
+   163→      return
+   164→    }
+   165→    if (!productInput.uploadedImage) {
+   166→      toast({ title: 'Загрузите фото товара', description: 'Для генерации карточки необходимо загрузить фото', variant: 'destructive' })
+   167→      return
+   168→    }
+   169→
+   170→    setGeneratingText(true)
+   171→    setUsedModel(null)
+   172→    try {
+   173→      const textRes = await fetch('/api/generate-text', {
+   174→        method: 'POST',
+   175→        headers: { 'Content-Type': 'application/json' },
+   176→        body: JSON.stringify({
+   177→          productName: productInput.productName,
+   178→          category: productInput.category,
+   179→          sellingPoints: productInput.sellingPoints,
+   180→          targetAudience: productInput.targetAudience,
+   181→          keywords: productInput.keywords,
+   182→          style: productInput.style,
+   183→          model: currentModel,
+   184→          apiToken: apiToken || undefined,
+   185→        }),
+   186→      })
+   187→
+   188→      let textData
+   189→      try { textData = await textRes.json() } catch { throw new Error('Сервер вернул некорректный ответ') }
+   190→      if (!textRes.ok) throw new Error(textData?.error || 'Ошибка генерации текста')
+   191→
+   192→      // Extract used model from response header
+   193→      const modelUsed = textRes.headers?.get('X-Model-Used')
+   194→      if (modelUsed) {
+   195→        setUsedModel(modelUsed)
+   196→      }
+   197→
+   198→      setGeneratedContent(textData)
+   199→      toast({
+   200→        title: 'Карточка готова',
+   201→        description: modelUsed && modelUsed !== currentModel
+   202→          ? `Использована модель: ${modelUsed.split('/').pop()?.replace(':free', '')}`
+   203→          : 'Текст сгенерирован, карточка готова к скачиванию',
+   204→      })
+   205→    } catch (err) {
+   206→      toast({ title: 'Ошибка генерации', description: err instanceof Error ? err.message : 'Попробуйте ещё раз', variant: 'destructive' })
+   207→    } finally {
+   208→      setGeneratingText(false)
+   209→    }
+   210→  }, [productInput, setGeneratingText, setGeneratedContent, toast, currentModel, apiToken])
+   211→
+   212→  const handleDownloadCard = useCallback(async () => {
+   213→    if (!cardRef.current) return
+   214→    setIsDownloading(true)
+   215→    try {
+   216→      const domToImage = (await import('dom-to-image-more')).default
+   217→      const dataUrl = await domToImage.toPng(cardRef.current, {
+   218→        width: 900, height: 1200, quality: 1,
+   219→        style: { transform: 'none' },
+   220→      })
+   221→      const link = document.createElement('a')
+   222→      link.href = dataUrl
+   223→      link.download = `${productInput.productName || 'product'}-card.png`
+   224→      document.body.appendChild(link)
+   225→      link.click()
+   226→      document.body.removeChild(link)
+   227→      toast({ title: 'Скачано', description: 'Карточка товара сохранена' })
+   228→    } catch {
+   229→      toast({ title: 'Ошибка скачивания', description: 'Не удалось сохранить карточку', variant: 'destructive' })
+   230→    } finally {
+   231→      setIsDownloading(false)
+   232→    }
+   233→  }, [productInput.productName, toast])
+   234→
+   235→  const handleRegenerate = useCallback(() => {
+   236→    useGeneratorStore.setState({ generatedImages: [], selectedImageIndex: 0, completedImageCount: 0 })
+   237→    handleGenerate()
+   238→  }, [handleGenerate])
+   239→
+   240→  return (
+   241→    <div className="min-h-screen bg-background flex flex-col">
+   242→      {/* Header */}
+   243→      <header className="sticky top-0 z-40 border-b bg-card/80 backdrop-blur-sm">
+   244→        <div className="mx-auto flex h-12 sm:h-14 md:h-16 max-w-7xl items-center justify-between px-3 sm:px-5 md:px-6 lg:px-8">
+   245→          <div className="flex items-center gap-2 sm:gap-3">
+   246→            <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+   247→              <ShoppingBag className="h-4 w-4 sm:h-5 sm:w-5" />
+   248→            </div>
+   249→            <div>
+   250→              <h1 className="text-sm sm:text-base md:text-lg font-bold leading-tight">E-Commerce Генератор</h1>
+   251→              <p className="hidden md:block text-xs text-muted-foreground">Готовые карточки для маркетплейсов</p>
+   252→            </div>
+   253→          </div>
+   254→          <div className="flex items-center gap-1.5 sm:gap-2">
+   255→            <ModelSelector />
+   256→            <ThemeToggle />
+   257→            {hasResults && (
+   258→              <Button variant="outline" size="sm" onClick={resetResults} className="gap-1.5 text-xs h-8 sm:h-9">
+   259→                <RefreshCw className="h-3 w-3" />
+   260→                <span className="hidden sm:inline">Начать заново</span>
+   261→                <span className="sm:hidden">Заново</span>
+   262→              </Button>
+   263→            )}
+   264→          </div>
+   265→        </div>
+   266→      </header>
+   267→
+   268→      {/* Main Content */}
+   269→      <main className="flex-1 mx-auto w-full max-w-7xl px-3 py-3 sm:px-5 sm:py-4 md:px-6 md:py-6 lg:px-8 lg:py-8">
+   270→        <div className="grid gap-3 sm:gap-4 md:gap-6 lg:grid-cols-2">
+   271→          {/* LEFT PANEL — Input Form */}
+   272→          <motion.div
+   273→            initial={{ opacity: 0, y: 10 }}
+   274→            animate={{ opacity: 1, y: 0 }}
+   275→            transition={{ duration: 0.3 }}
+   276→          >
+   277→            <Card>
+   278→              <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6 pt-4 sm:pt-6">
+   279→                <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+   280→                  <Type className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+   281→                  Данные о товаре
+   282→                </CardTitle>
+   283→                <CardDescription className="text-xs sm:text-sm">
+   284→                  Заполните информацию — на основе неё сгенерируется готовая карточка
+   285→                </CardDescription>
+   286→              </CardHeader>
+   287→              <CardContent className="space-y-3 sm:space-y-4 md:space-y-5 px-4 sm:px-6 pb-4 sm:pb-6">
+   288→                {/* Product Image Upload */}
+   289→                <div className="space-y-1.5 sm:space-y-2">
+   290→                  <Label className="text-xs sm:text-sm">Фото товара <span className="text-destructive font-normal">* обязательно</span></Label>
+   291→                  {!productInput.uploadedImage ? (
+   292→                    <div
+   293→                      onDrop={handleDrop}
+   294→                      onDragOver={handleDragOver}
+   295→                      onDragLeave={handleDragLeave}
+   296→                      onClick={() => fileInputRef.current?.click()}
+   297→                      className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 sm:p-6 transition-colors ${
+   298→                        isDragOver
+   299→                          ? 'border-primary bg-primary/5'
+   300→                          : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
+   301→                      }`}
+   302→                    >
+   303→                      <Upload className={`mb-2 h-6 w-6 sm:h-8 sm:w-8 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`} />
+   304→                      <p className="text-xs sm:text-sm font-medium text-muted-foreground">
+   305→                        Перетащите фото или нажмите
+   306→                      </p>
+   307→                      <p className="mt-1 text-[10px] sm:text-xs text-muted-foreground/70">
+   308→                        JPG, PNG, WebP (до 10 МБ)
+   309→                      </p>
+   310→                    </div>
+   311→                  ) : (
+   312→                    <div className="relative inline-block">
+   313→                      <img
+   314→                        src={productInput.uploadedImage}
+   315→                        alt="Фото товара"
+   316→                        className="h-20 sm:h-28 md:h-32 w-auto max-w-full rounded-lg border object-contain"
+   317→                      />
+   318→                      <Button variant="destructive" size="icon" className="absolute -right-2 -top-2 h-6 w-6" onClick={removeUploadedImage}>
+   319→                        <X className="h-3 w-3" />
+   320→                      </Button>
+   321→                      <p className="mt-1 text-[10px] sm:text-xs text-muted-foreground truncate max-w-[200px] sm:max-w-none">
+   322→                        {productInput.uploadedImageName}
+   323→                      </p>
+   324→                    </div>
+   325→                  )}
+   326→                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFileInput} />
+   327→                </div>
+   328→
+   329→                {/* Product Name */}
+   330→                <div className="space-y-1.5 sm:space-y-2">
+   331→                  <Label htmlFor="productName" className="text-xs sm:text-sm">
+   332→                    Название товара <span className="text-destructive">*</span>
+   333→                  </Label>
+   334→                  <Input
+   335→                    id="productName"
+   336→                    placeholder='Беспроводные наушники SoundMax Pro'
+   337→                    value={productInput.productName}
+   338→                    onChange={(e) => setProductInput({ productName: e.target.value })}
+   339→                    className="text-sm"
+   340→                  />
+   341→                </div>
+   342→
+   343→                {/* Category + Style */}
+   344→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+   345→                  <div className="space-y-1.5 sm:space-y-2">
+   346→                    <Label className="text-xs sm:text-sm">Категория</Label>
+   347→                    <Select value={productInput.category} onValueChange={(value) => setProductInput({ category: value })}>
+   348→                      <SelectTrigger className="w-full text-sm"><SelectValue placeholder="Выберите" /></SelectTrigger>
+   349→                      <SelectContent>
+   350→                        {CATEGORIES.map((cat) => (<SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>))}
+   351→                      </SelectContent>
+   352→                    </Select>
+   353→                  </div>
+   354→                  <div className="space-y-1.5 sm:space-y-2">
+   355→                    <Label className="text-xs sm:text-sm">Стиль карточки</Label>
+   356→                    <Select value={productInput.style} onValueChange={(value) => setProductInput({ style: value })}>
+   357→                      <SelectTrigger className="w-full text-sm"><SelectValue placeholder="Выберите" /></SelectTrigger>
+   358→                      <SelectContent>
+   359→                        {STYLES.map((s) => (<SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>))}
+   360→                      </SelectContent>
+   361→                    </Select>
+   362→                  </div>
+   363→                </div>
+   364→
+   365→                {/* Key Selling Points */}
+   366→                <div className="space-y-1.5 sm:space-y-2">
+   367→                  <Label htmlFor="sellingPoints" className="text-xs sm:text-sm">Ключевые преимущества</Label>
+   368→                  <Textarea
+   369→                    id="sellingPoints"
+   370→                    placeholder={"Активное шумоподавление\nВремя работы 30 часов\nВодозащита IPX5"}
+   371→                    value={productInput.sellingPoints}
+   372→                    onChange={(e) => setProductInput({ sellingPoints: e.target.value })}
+   373→                    rows={3}
+   374→                    className="text-sm"
+   375→                  />
+   376→                  <p className="text-[10px] sm:text-xs text-muted-foreground">Каждое преимущество с новой строки</p>
+   377→                </div>
+   378→
+   379→                {/* Target Audience + Keywords */}
+   380→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+   381→                  <div className="space-y-1.5 sm:space-y-2">
+   382→                    <Label htmlFor="targetAudience" className="text-xs sm:text-sm">Целевая аудитория</Label>
+   383→                    <Input id="targetAudience" placeholder='женщины 25-35' value={productInput.targetAudience} onChange={(e) => setProductInput({ targetAudience: e.target.value })} className="text-sm" />
+   384→                  </div>
+   385→                  <div className="space-y-1.5 sm:space-y-2">
+   386→                    <Label htmlFor="keywords" className="text-xs sm:text-sm">Ключевые слова</Label>
+   387→                    <Input id="keywords" placeholder='наушники, звук' value={productInput.keywords} onChange={(e) => setProductInput({ keywords: e.target.value })} className="text-sm" />
+   388→                  </div>
+   389→                </div>
+   390→
+   391→                {/* Badge */}
+   392→                <div className="space-y-1.5 sm:space-y-2">
+   393→                  <Label className="text-xs sm:text-sm">Бейдж на карточке</Label>
+   394→                  <Select value={selectedBadge} onValueChange={setSelectedBadge}>
+   395→                    <SelectTrigger className="w-full text-sm"><SelectValue /></SelectTrigger>
+   396→                    <SelectContent>
+   397→                      {BADGE_OPTIONS.map((b) => (<SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>))}
+   398→                    </SelectContent>
+   399→                  </Select>
+   400→                </div>
+   401→
+   402→                <Separator />
+   403→
+   404→                {/* Generate Button */}
+   405→                <Button
+   406→                  size="lg"
+   407→                  className="w-full gap-2 text-sm sm:text-base h-11 sm:h-12"
+   408→                  onClick={handleGenerate}
+   409→                  disabled={isGenerating || !productInput.productName.trim()}
+   410→                >
+   411→                  {isGenerating ? (
+   412→                    <><Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />Генерация...</>
+   413→                  ) : (
+   414→                    <><Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />Сгенерировать карточку</>
+   415→                  )}
+   416→                </Button>
+   417→
+   418→                {/* Model info hint */}
+   419→                {usedModel && usedModel !== currentModel && (
+   420→                  <p className="text-[10px] text-muted-foreground text-center">
+   421→                    Использована резервная модель: {usedModel.split('/').pop()?.replace(':free', '')}
+   422→                  </p>
+   423→                )}
+   424→              </CardContent>
+   425→            </Card>
+   426→
+   427→            {/* Editable Text Section */}
+   428→            {generatedContent && (
+   429→              <Card className="mt-3 sm:mt-4 md:mt-6">
+   430→                <CardHeader className="pb-2 sm:pb-3 px-4 sm:px-6 pt-4 sm:pt-6">
+   431→                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+   432→                    <Type className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+   433→                    Редактировать текст карточки
+   434→                  </CardTitle>
+   435→                  <CardDescription className="text-xs">Изменения сразу отображаются на карточке</CardDescription>
+   436→                </CardHeader>
+   437→                <CardContent className="space-y-2 sm:space-y-3 px-4 sm:px-6 pb-4 sm:pb-6">
+   438→                  <div className="space-y-1">
+   439→                    <Label className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Заголовок</Label>
+   440→                    <Input value={generatedContent.title} onChange={(e) => updateContentField('title', e.target.value)} className="font-semibold text-sm" />
+   441→                  </div>
+   442→                  <div className="space-y-1">
+   443→                    <Label className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Подзаголовок</Label>
+   444→                    <Input value={generatedContent.subtitle} onChange={(e) => updateContentField('subtitle', e.target.value)} className="text-sm" />
+   445→                  </div>
+   446→                  <div className="space-y-1">
+   447→                    <Label className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Преимущества</Label>
+   448→                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+   449→                      {generatedContent.features.map((feature, index) => (
+   450→                        <Badge key={index} variant="secondary" className="gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm">
+   451→                          <CheckCircle2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary" />
+   452→                          <input
+   453→                            value={feature}
+   454→                            onChange={(e) => {
+   455→                              const newFeatures = [...generatedContent.features]
+   456→                              newFeatures[index] = e.target.value
+   457→                              updateContentField('features', newFeatures)
+   458→                            }}
+   459→                            className="w-auto min-w-[2rem] bg-transparent outline-none text-xs sm:text-sm"
+   460→                            style={{ width: `${Math.max(feature.length + 1, 4)}ch` }}
+   461→                          />
+   462→                        </Badge>
+   463→                      ))}
+   464→                    </div>
+   465→                  </div>
+   466→                </CardContent>
+   467→              </Card>
+   468→            )}
+   469→          </motion.div>
+   470→
+   471→          {/* RIGHT PANEL — Ready Card Preview */}
+   472→          <motion.div
+   473→            initial={{ opacity: 0, y: 10 }}
+   474→            animate={{ opacity: 1, y: 0 }}
+   475→            transition={{ duration: 0.3, delay: 0.1 }}
+   476→            className="space-y-3 sm:space-y-4"
+   477→          >
+   478→            <Card>
+   479→              <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6 pt-4 sm:pt-6">
+   480→                <div className="flex items-center justify-between">
+   481→                  <div>
+   482→                    <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+   483→                      <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+   484→                      Готовая карточка
+   485→                    </CardTitle>
+   486→                    <CardDescription className="text-xs sm:text-sm">
+   487→                      900×1200 • для WB, Ozon, Яндекс Маркет
+   488→                    </CardDescription>
+   489→                  </div>
+   490→                  {isGeneratingText && (
+   491→                    <div className="flex items-center gap-1.5 text-xs sm:text-sm text-muted-foreground">
+   492→                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+   493→                      <span className="hidden sm:inline">Генерация текста...</span>
+   494→                      <span className="sm:hidden">Генерация...</span>
+   495→                    </div>
+   496→                  )}
+   497→                </div>
+   498→              </CardHeader>
+   499→              <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
+   500→                {isCardVisible ? (
+   501→                  <div className="space-y-3 sm:space-y-4">
+   502→                    {/* Внешний обёрточный контейнер — ОГРАНИЧИВАЕТ ширину */}
+   503→                    <div
+   504→                      ref={previewWrapperRef}
+   505→                      className="w-full overflow-hidden rounded-lg border bg-muted/30"
+   506→                    >
+   507→                      {/* Контейнер с правильными пропорциями 900:1200 */}
+   508→                      <div
+   509→                        style={{
+   510→                          position: 'relative',
+   511→                          width: '100%',
+   512→                          paddingBottom: `${(1200 / 900) * 100}%`,
+   513→                          overflow: 'hidden',
+   514→                        }}
+   515→                      >
+   516→                        {/* Внутренний div с масштабированием */}
+   517→                        <div
+   518→                          style={{
+   519→                            position: 'absolute',
+   520→                            top: 0,
+   521→                            left: 0,
+   522→                            width: '900px',
+   523→                            height: '1200px',
+   524→                            transform: `scale(${cardScale})`,
+   525→                            transformOrigin: 'top left',
+   526→                          }}
+   527→                        >
+   528→                          <div ref={cardRef}>
+   529→                            <ProductCard
+   530→                              productImage={productImageForCard}
+   531→                              title={generatedContent?.title || productInput.productName}
+   532→                              subtitle={generatedContent?.subtitle || ''}
+   533→                              features={generatedContent?.features || []}
+   534→                              style={productInput.style || 'minimalism'}
+   535→                              badge={selectedBadge === 'none' ? undefined : selectedBadge}
+   536→                            />
+   537→                          </div>
+   538→                        </div>
+   539→                      </div>
+   540→                    </div>
+   541→
+   542→                    {/* Action Buttons */}
+   543→                    <div className="flex gap-2 sm:gap-3">
+   544→                      <Button
+   545→                        className="flex-1 gap-1.5 sm:gap-2 text-xs sm:text-sm h-10 sm:h-11"
+   546→                        onClick={handleDownloadCard}
+   547→                        disabled={isGenerating || isDownloading || !productImageForCard}
+   548→                      >
+   549→                        {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+   550→                        Скачать PNG
+   551→                      </Button>
+   552→                      <Button
+   553→                        variant="outline"
+   554→                        className="flex-1 gap-1.5 sm:gap-2 text-xs sm:text-sm h-10 sm:h-11"
+   555→                        onClick={handleRegenerate}
+   556→                        disabled={isGenerating}
+   557→                      >
+   558→                        <RefreshCw className={`h-3.5 w-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
+   559→                        Перегенерировать
+   560→                      </Button>
+   561→                    </div>
+   562→                  </div>
+   563→                ) : (
+   564→                  <div className="flex flex-col items-center justify-center py-8 sm:py-12 md:py-16 rounded-lg border border-dashed bg-muted/20">
+   565→                    <ShoppingBag className="mb-3 h-10 w-10 sm:h-14 md:h-16 sm:w-14 md:w-16 text-muted-foreground/30" />
+   566→                    <p className="text-sm sm:text-base font-medium text-muted-foreground">
+   567→                      Готовая карточка появится здесь
+   568→                    </p>
+   569→                    <p className="mt-1 text-xs sm:text-sm text-muted-foreground/60">
+   570→                      Заполните данные и нажмите «Сгенерировать»
+   571→                    </p>
+   572→                  </div>
+   573→                )}
+   574→              </CardContent>
+   575→            </Card>
+   576→          </motion.div>
+   577→        </div>
+   578→      </main>
+   579→
+   580→      {/* Footer */}
+   581→      <footer className="border-t py-2.5 sm:py-3 md:py-4">
+   582→        <div className="mx-auto max-w-7xl px-3 text-center text-[10px] sm:text-xs text-muted-foreground sm:px-6 lg:px-8">
+   583→          E-Commerce Генератор by Azar
+   584→        </div>
+   585→      </footer>
+   586→
+   587→    </div>
+   588→  )
+   589→}
+   590→
