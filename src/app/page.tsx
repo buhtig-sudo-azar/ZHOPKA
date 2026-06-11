@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Sparkles,
@@ -13,6 +13,16 @@ import {
   ImageIcon,
   Type,
   ShoppingBag,
+  Key,
+  Cpu,
+  Eye,
+  EyeOff,
+  Trash2,
+  ExternalLink,
+  AlertTriangle,
+  Search,
+  XCircle,
+  MinusCircle,
 } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -31,10 +41,9 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { useGeneratorStore } from '@/lib/store'
-import { useModelStore } from '@/store/model-store'
+import { useModelStore, type FreeModel } from '@/store/model-store'
 import ProductCard from '@/components/product-card'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { ModelSelector } from '@/components/settings/ModelSelector'
 
 const CATEGORIES = [
   { value: 'electronics', label: 'Электроника' },
@@ -78,6 +87,12 @@ export default function Home() {
   const [cardScale, setCardScale] = useState(1)
   const [usedModel, setUsedModel] = useState<string | null>(null)
 
+  // AI Settings state
+  const [showToken, setShowToken] = useState(false)
+  const [tokenInput, setTokenInput] = useState('')
+  const [modelSearch, setModelSearch] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
+
   const {
     productInput,
     setProductInput,
@@ -91,13 +106,89 @@ export default function Home() {
   } = useGeneratorStore()
 
   // Get model and token from model-store
-  const { currentModel, apiToken } = useModelStore()
+  const {
+    currentModel,
+    apiToken,
+    setApiToken,
+    setCurrentModel,
+    availableModels,
+    rateLimits,
+    isLoadingModels,
+    isCheckingAll,
+    fetchAvailableModels,
+    checkAllModels,
+  } = useModelStore()
+
+  // Load models on mount
+  useEffect(() => {
+    if (availableModels.length === 0) {
+      fetchAvailableModels()
+    }
+  }, [availableModels.length, fetchAvailableModels])
+
+  // Filter models by search
+  const filteredModels = useMemo(() => {
+    if (!modelSearch.trim()) return availableModels
+    const q = modelSearch.toLowerCase()
+    return availableModels.filter(
+      (m: FreeModel) =>
+        m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
+    )
+  }, [availableModels, modelSearch])
+
+  const handleSaveToken = useCallback(() => {
+    const trimmed = tokenInput.trim()
+    if (!trimmed) {
+      toast({ title: 'Ошибка', description: 'Введите API ключ', variant: 'destructive' })
+      return
+    }
+    setApiToken(trimmed)
+    setTokenInput('')
+    toast({ title: 'Ключ сохранён', description: 'API ключ OpenRouter сохранён в браузере' })
+  }, [tokenInput, setApiToken, toast])
+
+  const handleRemoveToken = useCallback(() => {
+    setApiToken('')
+    setTokenInput('')
+    toast({ title: 'Удалено', description: 'API ключ удалён' })
+  }, [setApiToken, toast])
+
+  const handleVerifyKey = useCallback(async () => {
+    setIsVerifying(true)
+    try {
+      const res = await fetch('/api/models/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: currentModel, apiToken: apiToken || tokenInput.trim() }),
+      })
+      const data = await res.json()
+      if (data.available) {
+        toast({ title: 'Ключ валиден', description: `Модель доступна, задержка: ${data.latency}мс` })
+      } else {
+        toast({ title: 'Проблема с ключом', description: data.reason || 'Ключ не прошёл проверку', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: 'Ошибка', description: 'Не удалось проверить ключ', variant: 'destructive' })
+    } finally {
+      setIsVerifying(false)
+    }
+  }, [apiToken, tokenInput, currentModel, toast])
+
+  const maskedToken = apiToken
+    ? `${apiToken.slice(0, 6)}${'\u2022'.repeat(Math.max(0, apiToken.length - 10))}${apiToken.slice(-4)}`
+    : ''
+
+  const currentModelLabel = useMemo(() => {
+    const found = availableModels.find((m: FreeModel) => m.id === currentModel)
+    if (found) return found.label
+    return currentModel.replace(/:free$/, '').split('/').pop() || currentModel
+  }, [currentModel, availableModels])
 
   const isGenerating = isGeneratingText
   const hasResults = generatedContent || generatedImages.length > 0 || productInput.uploadedImage
   const isCardVisible = generatedContent && productInput.uploadedImage
 
-  // Масштабирование карточки — пересчитываем при любом изменении размера и при появлении карточки
+  // Scale card
   useEffect(() => {
     const updateScale = () => {
       if (previewWrapperRef.current) {
@@ -105,14 +196,11 @@ export default function Home() {
         setCardScale(containerWidth / 900)
       }
     }
-
     updateScale()
-
     const observer = new ResizeObserver(updateScale)
     if (previewWrapperRef.current) {
       observer.observe(previewWrapperRef.current)
     }
-
     return () => observer.disconnect()
   }, [isCardVisible])
 
@@ -166,6 +254,10 @@ export default function Home() {
       toast({ title: 'Загрузите фото товара', description: 'Для генерации карточки необходимо загрузить фото', variant: 'destructive' })
       return
     }
+    if (!apiToken) {
+      toast({ title: 'Добавьте API ключ', description: 'Без ключа OpenRouter генерация невозможна. Получите бесплатный ключ в настройках ИИ.', variant: 'destructive' })
+      return
+    }
 
     setGeneratingText(true)
     setUsedModel(null)
@@ -189,7 +281,6 @@ export default function Home() {
       try { textData = await textRes.json() } catch { throw new Error('Сервер вернул некорректный ответ') }
       if (!textRes.ok) throw new Error(textData?.error || 'Ошибка генерации текста')
 
-      // Extract used model from response header
       const modelUsed = textRes.headers?.get('X-Model-Used')
       if (modelUsed) {
         setUsedModel(modelUsed)
@@ -252,7 +343,11 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <ModelSelector />
+            <Badge variant={apiToken ? 'default' : 'destructive'} className="gap-1 text-[10px] sm:text-xs px-2 py-0.5">
+              <Cpu className="h-3 w-3" />
+              <span className="hidden sm:inline truncate max-w-[120px]">{currentModelLabel}</span>
+              <span className="sm:hidden">AI</span>
+            </Badge>
             <ThemeToggle />
             {hasResults && (
               <Button variant="outline" size="sm" onClick={resetResults} className="gap-1.5 text-xs h-8 sm:h-9">
@@ -401,19 +496,188 @@ export default function Home() {
 
                 <Separator />
 
+                {/* ===== AI SETTINGS BLOCK ===== */}
+                <div className="space-y-3 sm:space-y-4 rounded-lg border bg-muted/30 p-3 sm:p-4">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-primary" />
+                    <span className="text-xs sm:text-sm font-semibold">Настройки ИИ</span>
+                    {apiToken ? (
+                      <Badge variant="default" className="ml-auto gap-1 text-[10px] px-1.5 py-0">
+                        <CheckCircle2 className="h-2.5 w-2.5" /> Ключ установлен
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive" className="ml-auto gap-1 text-[10px] px-1.5 py-0">
+                        <AlertTriangle className="h-2.5 w-2.5" /> Нет ключа
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* API Key */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1.5">
+                      <Key className="h-3 w-3" />
+                      API ключ OpenRouter
+                      <span className="text-destructive">*</span>
+                    </Label>
+                    {apiToken ? (
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex-1 rounded-md border bg-background px-2.5 py-1.5 text-xs font-mono truncate">
+                          {showToken ? apiToken : maskedToken}
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setShowToken(!showToken)}>
+                          {showToken ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleVerifyKey} disabled={isVerifying}>
+                          {isVerifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive" onClick={handleRemoveToken}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            type="password"
+                            placeholder="sk-or-v1-..."
+                            value={tokenInput}
+                            onChange={(e) => setTokenInput(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSaveToken()}
+                            className="h-8 text-xs font-mono"
+                          />
+                          <Button variant="default" size="sm" className="h-8 text-xs shrink-0" onClick={handleSaveToken} disabled={!tokenInput.trim()}>
+                            Сохранить
+                          </Button>
+                        </div>
+                        <a
+                          href="https://openrouter.ai/keys"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] sm:text-xs text-primary hover:underline"
+                        >
+                          Получить бесплатный ключ <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                        <p className="text-[10px] text-muted-foreground/70">Ключ хранится только в браузере. Бесплатные модели не требуют оплаты.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Model Selection */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1.5">
+                      <Cpu className="h-3 w-3" />
+                      Модель ИИ
+                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Select value={currentModel} onValueChange={setCurrentModel}>
+                        <SelectTrigger className="flex-1 text-xs h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredModels.map((m: FreeModel) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              <span className="flex items-center gap-1.5">
+                                {rateLimits[m.id]?.checkedAt ? (
+                                  rateLimits[m.id]?.available
+                                    ? <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                    : <XCircle className="h-3 w-3 text-red-500" />
+                                ) : (
+                                  <MinusCircle className="h-3 w-3 text-muted-foreground/40" />
+                                )}
+                                {m.label}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs shrink-0 gap-1"
+                        onClick={checkAllModels}
+                        disabled={isCheckingAll || availableModels.length === 0}
+                      >
+                        {isCheckingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                        <span className="hidden sm:inline">Тест</span>
+                      </Button>
+                    </div>
+                    {/* Model search */}
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                      <Input
+                        placeholder="Поиск модели..."
+                        value={modelSearch}
+                        onChange={(e) => setModelSearch(e.target.value)}
+                        className="pl-7 h-7 text-[10px] sm:text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Model Status List (top 7) */}
+                  {availableModels.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-[10px] text-muted-foreground font-medium">Статус моделей:</div>
+                      <div className="grid grid-cols-1 gap-0.5 max-h-36 overflow-y-auto">
+                        {availableModels.slice(0, 7).map((m: FreeModel) => {
+                          const rl = rateLimits[m.id]
+                          return (
+                            <button
+                              key={m.id}
+                              className={`flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-[10px] sm:text-xs hover:bg-accent transition-colors ${currentModel === m.id ? 'bg-accent/80 font-medium' : ''}`}
+                              onClick={() => setCurrentModel(m.id)}
+                            >
+                              {rl?.checkedAt ? (
+                                rl.available
+                                  ? <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                                  : <XCircle className="h-3 w-3 text-red-500 shrink-0" />
+                              ) : (
+                                <MinusCircle className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                              )}
+                              <span className="truncate flex-1">{m.label}</span>
+                              {rl?.latency && (
+                                <span className="text-[9px] text-muted-foreground shrink-0">{rl.latency}мс</span>
+                              )}
+                              {currentModel === m.id && (
+                                <span className="text-[9px] text-primary shrink-0">&#9679;</span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* API Key Warning */}
+                {!apiToken && (
+                  <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2">
+                    <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+                    <p className="text-xs text-destructive">Добавьте API ключ OpenRouter для генерации. Это бесплатно — получите ключ на openrouter.ai/keys</p>
+                  </div>
+                )}
+
                 {/* Generate Button */}
                 <Button
                   size="lg"
                   className="w-full gap-2 text-sm sm:text-base h-11 sm:h-12"
                   onClick={handleGenerate}
-                  disabled={isGenerating || !productInput.productName.trim()}
+                  disabled={isGenerating || !productInput.productName.trim() || !apiToken}
                 >
                   {isGenerating ? (
                     <><Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />Генерация...</>
+                  ) : !apiToken ? (
+                    <><Key className="h-4 w-4 sm:h-5 sm:w-5" />Добавьте API ключ для генерации</>
                   ) : (
                     <><Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />Сгенерировать карточку</>
                   )}
                 </Button>
+
+                {/* Status line */}
+                <p className="text-[10px] text-muted-foreground text-center">
+                  {apiToken
+                    ? `${currentModelLabel} \u2022 Fallback: автоматически`
+                    : '\u26A0 Добавьте API ключ OpenRouter выше'}
+                </p>
 
                 {/* Model info hint */}
                 {usedModel && usedModel !== currentModel && (
@@ -499,12 +763,10 @@ export default function Home() {
               <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
                 {isCardVisible ? (
                   <div className="space-y-3 sm:space-y-4">
-                    {/* Внешний обёрточный контейнер — ОГРАНИЧИВАЕТ ширину */}
                     <div
                       ref={previewWrapperRef}
                       className="w-full overflow-hidden rounded-lg border bg-muted/30"
                     >
-                      {/* Контейнер с правильными пропорциями 900:1200 */}
                       <div
                         style={{
                           position: 'relative',
@@ -513,7 +775,6 @@ export default function Home() {
                           overflow: 'hidden',
                         }}
                       >
-                        {/* Внутренний div с масштабированием */}
                         <div
                           style={{
                             position: 'absolute',
