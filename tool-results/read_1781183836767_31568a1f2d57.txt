@@ -1,0 +1,851 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+     4→import { motion } from 'framer-motion'
+     5→import {
+     6→  Sparkles,
+     7→  Upload,
+     8→  Download,
+     9→  RefreshCw,
+    10→  X,
+    11→  CheckCircle2,
+    12→  Loader2,
+    13→  ImageIcon,
+    14→  Type,
+    15→  ShoppingBag,
+    16→  Key,
+    17→  Cpu,
+    18→  Eye,
+    19→  EyeOff,
+    20→  Trash2,
+    21→  ExternalLink,
+    22→  AlertTriangle,
+    23→  Search,
+    24→  XCircle,
+    25→  MinusCircle,
+    26→} from 'lucide-react'
+    27→
+    28→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+    29→import { Button } from '@/components/ui/button'
+    30→import { Input } from '@/components/ui/input'
+    31→import { Textarea } from '@/components/ui/textarea'
+    32→import { Label } from '@/components/ui/label'
+    33→import { Badge } from '@/components/ui/badge'
+    34→import { Separator } from '@/components/ui/separator'
+    35→import {
+    36→  Select,
+    37→  SelectContent,
+    38→  SelectItem,
+    39→  SelectTrigger,
+    40→  SelectValue,
+    41→} from '@/components/ui/select'
+    42→import { useToast } from '@/hooks/use-toast'
+    43→import { useGeneratorStore } from '@/lib/store'
+    44→import { useModelStore, type FreeModel } from '@/store/model-store'
+    45→import ProductCard from '@/components/product-card'
+    46→import { ThemeToggle } from '@/components/theme-toggle'
+    47→
+    48→const CATEGORIES = [
+    49→  { value: 'electronics', label: 'Электроника' },
+    50→  { value: 'clothing', label: 'Одежда' },
+    51→  { value: 'beauty', label: 'Красота' },
+    52→  { value: 'home', label: 'Дом и сад' },
+    53→  { value: 'sport', label: 'Спорт' },
+    54→  { value: 'food', label: 'Еда' },
+    55→  { value: 'toys', label: 'Игрушки' },
+    56→  { value: 'auto', label: 'Авто' },
+    57→  { value: 'books', label: 'Книги' },
+    58→  { value: 'other', label: 'Другое' },
+    59→]
+    60→
+    61→const STYLES = [
+    62→  { value: 'minimalism', label: 'Минимализм' },
+    63→  { value: 'premium', label: 'Премиум' },
+    64→  { value: 'fun', label: 'Весёлый' },
+    65→  { value: 'elegant', label: 'Элегантный' },
+    66→  { value: 'sporty', label: 'Спортивный' },
+    67→  { value: 'strict', label: 'Строгий' },
+    68→]
+    69→
+    70→const BADGE_OPTIONS = [
+    71→  { value: 'none', label: 'Без бейджа' },
+    72→  { value: 'Хит продаж', label: 'Хит продаж' },
+    73→  { value: 'Новинка', label: 'Новинка' },
+    74→  { value: 'Лучшая цена', label: 'Лучшая цена' },
+    75→  { value: 'Топ выбор', label: 'Топ выбор' },
+    76→  { value: 'Эксклюзив', label: 'Эксклюзив' },
+    77→]
+    78→
+    79→export default function Home() {
+    80→  const { toast } = useToast()
+    81→  const fileInputRef = useRef<HTMLInputElement>(null)
+    82→  const cardRef = useRef<HTMLDivElement>(null)
+    83→  const previewWrapperRef = useRef<HTMLDivElement>(null)
+    84→  const [isDragOver, setIsDragOver] = useState(false)
+    85→  const [selectedBadge, setSelectedBadge] = useState('none')
+    86→  const [isDownloading, setIsDownloading] = useState(false)
+    87→  const [cardScale, setCardScale] = useState(1)
+    88→  const [usedModel, setUsedModel] = useState<string | null>(null)
+    89→
+    90→  // AI Settings state
+    91→  const [showToken, setShowToken] = useState(false)
+    92→  const [tokenInput, setTokenInput] = useState('')
+    93→  const [modelSearch, setModelSearch] = useState('')
+    94→  const [isVerifying, setIsVerifying] = useState(false)
+    95→
+    96→  const {
+    97→    productInput,
+    98→    setProductInput,
+    99→    isGeneratingText,
+   100→    generatedContent,
+   101→    generatedImages,
+   102→    setGeneratingText,
+   103→    setGeneratedContent,
+   104→    updateContentField,
+   105→    resetResults,
+   106→  } = useGeneratorStore()
+   107→
+   108→  // Get model and token from model-store
+   109→  const {
+   110→    currentModel,
+   111→    apiToken,
+   112→    setApiToken,
+   113→    setCurrentModel,
+   114→    availableModels,
+   115→    rateLimits,
+   116→    isLoadingModels,
+   117→    isCheckingAll,
+   118→    fetchAvailableModels,
+   119→    checkAllModels,
+   120→  } = useModelStore()
+   121→
+   122→  // Load models on mount
+   123→  useEffect(() => {
+   124→    if (availableModels.length === 0) {
+   125→      fetchAvailableModels()
+   126→    }
+   127→  }, [availableModels.length, fetchAvailableModels])
+   128→
+   129→  // Filter models by search
+   130→  const filteredModels = useMemo(() => {
+   131→    if (!modelSearch.trim()) return availableModels
+   132→    const q = modelSearch.toLowerCase()
+   133→    return availableModels.filter(
+   134→      (m: FreeModel) =>
+   135→        m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)
+   136→    )
+   137→  }, [availableModels, modelSearch])
+   138→
+   139→  const handleSaveToken = useCallback(() => {
+   140→    const trimmed = tokenInput.trim()
+   141→    if (!trimmed) {
+   142→      toast({ title: 'Ошибка', description: 'Введите API ключ', variant: 'destructive' })
+   143→      return
+   144→    }
+   145→    setApiToken(trimmed)
+   146→    setTokenInput('')
+   147→    toast({ title: 'Ключ сохранён', description: 'API ключ OpenRouter сохранён в браузере' })
+   148→  }, [tokenInput, setApiToken, toast])
+   149→
+   150→  const handleRemoveToken = useCallback(() => {
+   151→    setApiToken('')
+   152→    setTokenInput('')
+   153→    toast({ title: 'Удалено', description: 'API ключ удалён' })
+   154→  }, [setApiToken, toast])
+   155→
+   156→  const handleVerifyKey = useCallback(async () => {
+   157→    setIsVerifying(true)
+   158→    try {
+   159→      const res = await fetch('/api/models/check', {
+   160→        method: 'POST',
+   161→        headers: { 'Content-Type': 'application/json' },
+   162→        body: JSON.stringify({ model: currentModel, apiToken: apiToken || tokenInput.trim() }),
+   163→      })
+   164→      const data = await res.json()
+   165→      if (data.available) {
+   166→        toast({ title: 'Ключ валиден', description: `Модель доступна, задержка: ${data.latency}мс` })
+   167→      } else {
+   168→        toast({ title: 'Проблема с ключом', description: data.reason || 'Ключ не прошёл проверку', variant: 'destructive' })
+   169→      }
+   170→    } catch {
+   171→      toast({ title: 'Ошибка', description: 'Не удалось проверить ключ', variant: 'destructive' })
+   172→    } finally {
+   173→      setIsVerifying(false)
+   174→    }
+   175→  }, [apiToken, tokenInput, currentModel, toast])
+   176→
+   177→  const maskedToken = apiToken
+   178→    ? `${apiToken.slice(0, 6)}${'\u2022'.repeat(Math.max(0, apiToken.length - 10))}${apiToken.slice(-4)}`
+   179→    : ''
+   180→
+   181→  const currentModelLabel = useMemo(() => {
+   182→    const found = availableModels.find((m: FreeModel) => m.id === currentModel)
+   183→    if (found) return found.label
+   184→    return currentModel.replace(/:free$/, '').split('/').pop() || currentModel
+   185→  }, [currentModel, availableModels])
+   186→
+   187→  const isGenerating = isGeneratingText
+   188→  const hasResults = generatedContent || generatedImages.length > 0 || productInput.uploadedImage
+   189→  const isCardVisible = generatedContent && productInput.uploadedImage
+   190→
+   191→  // Scale card
+   192→  useEffect(() => {
+   193→    const updateScale = () => {
+   194→      if (previewWrapperRef.current) {
+   195→        const containerWidth = previewWrapperRef.current.offsetWidth
+   196→        setCardScale(containerWidth / 900)
+   197→      }
+   198→    }
+   199→    updateScale()
+   200→    const observer = new ResizeObserver(updateScale)
+   201→    if (previewWrapperRef.current) {
+   202→      observer.observe(previewWrapperRef.current)
+   203→    }
+   204→    return () => observer.disconnect()
+   205→  }, [isCardVisible])
+   206→
+   207→  const handleImageUpload = useCallback(
+   208→    (file: File) => {
+   209→      if (!file.type.startsWith('image/')) {
+   210→        toast({ title: 'Ошибка', description: 'Загрузите изображение (jpg, png, webp)', variant: 'destructive' })
+   211→        return
+   212→      }
+   213→      if (file.size > 10 * 1024 * 1024) {
+   214→        toast({ title: 'Ошибка', description: 'Размер файла не должен превышать 10 МБ', variant: 'destructive' })
+   215→        return
+   216→      }
+   217→      const reader = new FileReader()
+   218→      reader.onload = (e) => {
+   219→        const base64 = e.target?.result as string
+   220→        setProductInput({ uploadedImage: base64, uploadedImageName: file.name })
+   221→      }
+   222→      reader.readAsDataURL(file)
+   223→    },
+   224→    [setProductInput, toast]
+   225→  )
+   226→
+   227→  const handleDrop = useCallback((e: React.DragEvent) => {
+   228→    e.preventDefault()
+   229→    setIsDragOver(false)
+   230→    const file = e.dataTransfer.files[0]
+   231→    if (file) handleImageUpload(file)
+   232→  }, [handleImageUpload])
+   233→
+   234→  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true) }, [])
+   235→  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false) }, [])
+   236→  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+   237→    const file = e.target.files?.[0]
+   238→    if (file) handleImageUpload(file)
+   239→  }, [handleImageUpload])
+   240→
+   241→  const removeUploadedImage = useCallback(() => {
+   242→    setProductInput({ uploadedImage: null, uploadedImageName: null })
+   243→    if (fileInputRef.current) fileInputRef.current.value = ''
+   244→  }, [setProductInput])
+   245→
+   246→  const productImageForCard = productInput.uploadedImage
+   247→
+   248→  const handleGenerate = useCallback(async () => {
+   249→    if (!productInput.productName.trim()) {
+   250→      toast({ title: 'Укажите название товара', description: 'Название обязательно для генерации', variant: 'destructive' })
+   251→      return
+   252→    }
+   253→    if (!productInput.uploadedImage) {
+   254→      toast({ title: 'Загрузите фото товара', description: 'Для генерации карточки необходимо загрузить фото', variant: 'destructive' })
+   255→      return
+   256→    }
+   257→    if (!apiToken) {
+   258→      toast({ title: 'Добавьте API ключ', description: 'Без ключа OpenRouter генерация невозможна. Получите бесплатный ключ в настройках ИИ.', variant: 'destructive' })
+   259→      return
+   260→    }
+   261→
+   262→    setGeneratingText(true)
+   263→    setUsedModel(null)
+   264→    try {
+   265→      const textRes = await fetch('/api/generate-text', {
+   266→        method: 'POST',
+   267→        headers: { 'Content-Type': 'application/json' },
+   268→        body: JSON.stringify({
+   269→          productName: productInput.productName,
+   270→          category: productInput.category,
+   271→          sellingPoints: productInput.sellingPoints,
+   272→          targetAudience: productInput.targetAudience,
+   273→          keywords: productInput.keywords,
+   274→          style: productInput.style,
+   275→          model: currentModel,
+   276→          apiToken: apiToken || undefined,
+   277→        }),
+   278→      })
+   279→
+   280→      let textData
+   281→      try { textData = await textRes.json() } catch { throw new Error('Сервер вернул некорректный ответ') }
+   282→      if (!textRes.ok) throw new Error(textData?.error || 'Ошибка генерации текста')
+   283→
+   284→      const modelUsed = textRes.headers?.get('X-Model-Used')
+   285→      if (modelUsed) {
+   286→        setUsedModel(modelUsed)
+   287→      }
+   288→
+   289→      setGeneratedContent(textData)
+   290→      toast({
+   291→        title: 'Карточка готова',
+   292→        description: modelUsed && modelUsed !== currentModel
+   293→          ? `Использована модель: ${modelUsed.split('/').pop()?.replace(':free', '')}`
+   294→          : 'Текст сгенерирован, карточка готова к скачиванию',
+   295→      })
+   296→    } catch (err) {
+   297→      toast({ title: 'Ошибка генерации', description: err instanceof Error ? err.message : 'Попробуйте ещё раз', variant: 'destructive' })
+   298→    } finally {
+   299→      setGeneratingText(false)
+   300→    }
+   301→  }, [productInput, setGeneratingText, setGeneratedContent, toast, currentModel, apiToken])
+   302→
+   303→  const handleDownloadCard = useCallback(async () => {
+   304→    if (!cardRef.current) return
+   305→    setIsDownloading(true)
+   306→    try {
+   307→      const domToImage = (await import('dom-to-image-more')).default
+   308→      const dataUrl = await domToImage.toPng(cardRef.current, {
+   309→        width: 900, height: 1200, quality: 1,
+   310→        style: { transform: 'none' },
+   311→      })
+   312→      const link = document.createElement('a')
+   313→      link.href = dataUrl
+   314→      link.download = `${productInput.productName || 'product'}-card.png`
+   315→      document.body.appendChild(link)
+   316→      link.click()
+   317→      document.body.removeChild(link)
+   318→      toast({ title: 'Скачано', description: 'Карточка товара сохранена' })
+   319→    } catch {
+   320→      toast({ title: 'Ошибка скачивания', description: 'Не удалось сохранить карточку', variant: 'destructive' })
+   321→    } finally {
+   322→      setIsDownloading(false)
+   323→    }
+   324→  }, [productInput.productName, toast])
+   325→
+   326→  const handleRegenerate = useCallback(() => {
+   327→    useGeneratorStore.setState({ generatedImages: [], selectedImageIndex: 0, completedImageCount: 0 })
+   328→    handleGenerate()
+   329→  }, [handleGenerate])
+   330→
+   331→  return (
+   332→    <div className="min-h-screen bg-background flex flex-col">
+   333→      {/* Header */}
+   334→      <header className="sticky top-0 z-40 border-b bg-card/80 backdrop-blur-sm">
+   335→        <div className="mx-auto flex h-12 sm:h-14 md:h-16 max-w-7xl items-center justify-between px-3 sm:px-5 md:px-6 lg:px-8">
+   336→          <div className="flex items-center gap-2 sm:gap-3">
+   337→            <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+   338→              <ShoppingBag className="h-4 w-4 sm:h-5 sm:w-5" />
+   339→            </div>
+   340→            <div>
+   341→              <h1 className="text-sm sm:text-base md:text-lg font-bold leading-tight">E-Commerce Генератор</h1>
+   342→              <p className="hidden md:block text-xs text-muted-foreground">Готовые карточки для маркетплейсов</p>
+   343→            </div>
+   344→          </div>
+   345→          <div className="flex items-center gap-1.5 sm:gap-2">
+   346→            <Badge variant={apiToken ? 'default' : 'destructive'} className="gap-1 text-[10px] sm:text-xs px-2 py-0.5">
+   347→              <Cpu className="h-3 w-3" />
+   348→              <span className="hidden sm:inline truncate max-w-[120px]">{currentModelLabel}</span>
+   349→              <span className="sm:hidden">AI</span>
+   350→            </Badge>
+   351→            <ThemeToggle />
+   352→            {hasResults && (
+   353→              <Button variant="outline" size="sm" onClick={resetResults} className="gap-1.5 text-xs h-8 sm:h-9">
+   354→                <RefreshCw className="h-3 w-3" />
+   355→                <span className="hidden sm:inline">Начать заново</span>
+   356→                <span className="sm:hidden">Заново</span>
+   357→              </Button>
+   358→            )}
+   359→          </div>
+   360→        </div>
+   361→      </header>
+   362→
+   363→      {/* Main Content */}
+   364→      <main className="flex-1 mx-auto w-full max-w-7xl px-3 py-3 sm:px-5 sm:py-4 md:px-6 md:py-6 lg:px-8 lg:py-8">
+   365→        <div className="grid gap-3 sm:gap-4 md:gap-6 lg:grid-cols-2">
+   366→          {/* LEFT PANEL — Input Form */}
+   367→          <motion.div
+   368→            initial={{ opacity: 0, y: 10 }}
+   369→            animate={{ opacity: 1, y: 0 }}
+   370→            transition={{ duration: 0.3 }}
+   371→          >
+   372→            <Card>
+   373→              <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6 pt-4 sm:pt-6">
+   374→                <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+   375→                  <Type className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+   376→                  Данные о товаре
+   377→                </CardTitle>
+   378→                <CardDescription className="text-xs sm:text-sm">
+   379→                  Заполните информацию — на основе неё сгенерируется готовая карточка
+   380→                </CardDescription>
+   381→              </CardHeader>
+   382→              <CardContent className="space-y-3 sm:space-y-4 md:space-y-5 px-4 sm:px-6 pb-4 sm:pb-6">
+   383→                {/* Product Image Upload */}
+   384→                <div className="space-y-1.5 sm:space-y-2">
+   385→                  <Label className="text-xs sm:text-sm">Фото товара <span className="text-destructive font-normal">* обязательно</span></Label>
+   386→                  {!productInput.uploadedImage ? (
+   387→                    <div
+   388→                      onDrop={handleDrop}
+   389→                      onDragOver={handleDragOver}
+   390→                      onDragLeave={handleDragLeave}
+   391→                      onClick={() => fileInputRef.current?.click()}
+   392→                      className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 sm:p-6 transition-colors ${
+   393→                        isDragOver
+   394→                          ? 'border-primary bg-primary/5'
+   395→                          : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
+   396→                      }`}
+   397→                    >
+   398→                      <Upload className={`mb-2 h-6 w-6 sm:h-8 sm:w-8 ${isDragOver ? 'text-primary' : 'text-muted-foreground'}`} />
+   399→                      <p className="text-xs sm:text-sm font-medium text-muted-foreground">
+   400→                        Перетащите фото или нажмите
+   401→                      </p>
+   402→                      <p className="mt-1 text-[10px] sm:text-xs text-muted-foreground/70">
+   403→                        JPG, PNG, WebP (до 10 МБ)
+   404→                      </p>
+   405→                    </div>
+   406→                  ) : (
+   407→                    <div className="relative inline-block">
+   408→                      <img
+   409→                        src={productInput.uploadedImage}
+   410→                        alt="Фото товара"
+   411→                        className="h-20 sm:h-28 md:h-32 w-auto max-w-full rounded-lg border object-contain"
+   412→                      />
+   413→                      <Button variant="destructive" size="icon" className="absolute -right-2 -top-2 h-6 w-6" onClick={removeUploadedImage}>
+   414→                        <X className="h-3 w-3" />
+   415→                      </Button>
+   416→                      <p className="mt-1 text-[10px] sm:text-xs text-muted-foreground truncate max-w-[200px] sm:max-w-none">
+   417→                        {productInput.uploadedImageName}
+   418→                      </p>
+   419→                    </div>
+   420→                  )}
+   421→                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFileInput} />
+   422→                </div>
+   423→
+   424→                {/* Product Name */}
+   425→                <div className="space-y-1.5 sm:space-y-2">
+   426→                  <Label htmlFor="productName" className="text-xs sm:text-sm">
+   427→                    Название товара <span className="text-destructive">*</span>
+   428→                  </Label>
+   429→                  <Input
+   430→                    id="productName"
+   431→                    placeholder='Беспроводные наушники SoundMax Pro'
+   432→                    value={productInput.productName}
+   433→                    onChange={(e) => setProductInput({ productName: e.target.value })}
+   434→                    className="text-sm"
+   435→                  />
+   436→                </div>
+   437→
+   438→                {/* Category + Style */}
+   439→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+   440→                  <div className="space-y-1.5 sm:space-y-2">
+   441→                    <Label className="text-xs sm:text-sm">Категория</Label>
+   442→                    <Select value={productInput.category} onValueChange={(value) => setProductInput({ category: value })}>
+   443→                      <SelectTrigger className="w-full text-sm"><SelectValue placeholder="Выберите" /></SelectTrigger>
+   444→                      <SelectContent>
+   445→                        {CATEGORIES.map((cat) => (<SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>))}
+   446→                      </SelectContent>
+   447→                    </Select>
+   448→                  </div>
+   449→                  <div className="space-y-1.5 sm:space-y-2">
+   450→                    <Label className="text-xs sm:text-sm">Стиль карточки</Label>
+   451→                    <Select value={productInput.style} onValueChange={(value) => setProductInput({ style: value })}>
+   452→                      <SelectTrigger className="w-full text-sm"><SelectValue placeholder="Выберите" /></SelectTrigger>
+   453→                      <SelectContent>
+   454→                        {STYLES.map((s) => (<SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>))}
+   455→                      </SelectContent>
+   456→                    </Select>
+   457→                  </div>
+   458→                </div>
+   459→
+   460→                {/* Key Selling Points */}
+   461→                <div className="space-y-1.5 sm:space-y-2">
+   462→                  <Label htmlFor="sellingPoints" className="text-xs sm:text-sm">Ключевые преимущества</Label>
+   463→                  <Textarea
+   464→                    id="sellingPoints"
+   465→                    placeholder={"Активное шумоподавление\nВремя работы 30 часов\nВодозащита IPX5"}
+   466→                    value={productInput.sellingPoints}
+   467→                    onChange={(e) => setProductInput({ sellingPoints: e.target.value })}
+   468→                    rows={3}
+   469→                    className="text-sm"
+   470→                  />
+   471→                  <p className="text-[10px] sm:text-xs text-muted-foreground">Каждое преимущество с новой строки</p>
+   472→                </div>
+   473→
+   474→                {/* Target Audience + Keywords */}
+   475→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+   476→                  <div className="space-y-1.5 sm:space-y-2">
+   477→                    <Label htmlFor="targetAudience" className="text-xs sm:text-sm">Целевая аудитория</Label>
+   478→                    <Input id="targetAudience" placeholder='женщины 25-35' value={productInput.targetAudience} onChange={(e) => setProductInput({ targetAudience: e.target.value })} className="text-sm" />
+   479→                  </div>
+   480→                  <div className="space-y-1.5 sm:space-y-2">
+   481→                    <Label htmlFor="keywords" className="text-xs sm:text-sm">Ключевые слова</Label>
+   482→                    <Input id="keywords" placeholder='наушники, звук' value={productInput.keywords} onChange={(e) => setProductInput({ keywords: e.target.value })} className="text-sm" />
+   483→                  </div>
+   484→                </div>
+   485→
+   486→                {/* Badge */}
+   487→                <div className="space-y-1.5 sm:space-y-2">
+   488→                  <Label className="text-xs sm:text-sm">Бейдж на карточке</Label>
+   489→                  <Select value={selectedBadge} onValueChange={setSelectedBadge}>
+   490→                    <SelectTrigger className="w-full text-sm"><SelectValue /></SelectTrigger>
+   491→                    <SelectContent>
+   492→                      {BADGE_OPTIONS.map((b) => (<SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>))}
+   493→                    </SelectContent>
+   494→                  </Select>
+   495→                </div>
+   496→
+   497→                <Separator />
+   498→
+   499→                {/* ===== AI SETTINGS BLOCK ===== */}
+   500→                <div className="space-y-3 sm:space-y-4 rounded-lg border bg-muted/30 p-3 sm:p-4">
+   501→                  <div className="flex items-center gap-2">
+   502→                    <Cpu className="h-4 w-4 text-primary" />
+   503→                    <span className="text-xs sm:text-sm font-semibold">Настройки ИИ</span>
+   504→                    {apiToken ? (
+   505→                      <Badge variant="default" className="ml-auto gap-1 text-[10px] px-1.5 py-0">
+   506→                        <CheckCircle2 className="h-2.5 w-2.5" /> Ключ установлен
+   507→                      </Badge>
+   508→                    ) : (
+   509→                      <Badge variant="destructive" className="ml-auto gap-1 text-[10px] px-1.5 py-0">
+   510→                        <AlertTriangle className="h-2.5 w-2.5" /> Нет ключа
+   511→                      </Badge>
+   512→                    )}
+   513→                  </div>
+   514→
+   515→                  {/* API Key */}
+   516→                  <div className="space-y-1.5">
+   517→                    <Label className="text-xs flex items-center gap-1.5">
+   518→                      <Key className="h-3 w-3" />
+   519→                      API ключ OpenRouter
+   520→                      <span className="text-destructive">*</span>
+   521→                    </Label>
+   522→                    {apiToken ? (
+   523→                      <div className="flex items-center gap-1.5">
+   524→                        <div className="flex-1 rounded-md border bg-background px-2.5 py-1.5 text-xs font-mono truncate">
+   525→                          {showToken ? apiToken : maskedToken}
+   526→                        </div>
+   527→                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setShowToken(!showToken)}>
+   528→                          {showToken ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+   529→                        </Button>
+   530→                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleVerifyKey} disabled={isVerifying}>
+   531→                          {isVerifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+   532→                        </Button>
+   533→                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive" onClick={handleRemoveToken}>
+   534→                          <Trash2 className="h-3 w-3" />
+   535→                        </Button>
+   536→                      </div>
+   537→                    ) : (
+   538→                      <div className="space-y-1.5">
+   539→                        <div className="flex items-center gap-1.5">
+   540→                          <Input
+   541→                            type="password"
+   542→                            placeholder="sk-or-v1-..."
+   543→                            value={tokenInput}
+   544→                            onChange={(e) => setTokenInput(e.target.value)}
+   545→                            onKeyDown={(e) => e.key === 'Enter' && handleSaveToken()}
+   546→                            className="h-8 text-xs font-mono"
+   547→                          />
+   548→                          <Button variant="default" size="sm" className="h-8 text-xs shrink-0" onClick={handleSaveToken} disabled={!tokenInput.trim()}>
+   549→                            Сохранить
+   550→                          </Button>
+   551→                        </div>
+   552→                        <a
+   553→                          href="https://openrouter.ai/keys"
+   554→                          target="_blank"
+   555→                          rel="noopener noreferrer"
+   556→                          className="inline-flex items-center gap-1 text-[10px] sm:text-xs text-primary hover:underline"
+   557→                        >
+   558→                          Получить бесплатный ключ <ExternalLink className="h-2.5 w-2.5" />
+   559→                        </a>
+   560→                        <p className="text-[10px] text-muted-foreground/70">Ключ хранится только в браузере. Бесплатные модели не требуют оплаты.</p>
+   561→                      </div>
+   562→                    )}
+   563→                  </div>
+   564→
+   565→                  {/* Model Selection */}
+   566→                  <div className="space-y-1.5">
+   567→                    <Label className="text-xs flex items-center gap-1.5">
+   568→                      <Cpu className="h-3 w-3" />
+   569→                      Модель ИИ
+   570→                    </Label>
+   571→                    <div className="flex items-center gap-1.5">
+   572→                      <Select value={currentModel} onValueChange={setCurrentModel}>
+   573→                        <SelectTrigger className="flex-1 text-xs h-8">
+   574→                          <SelectValue />
+   575→                        </SelectTrigger>
+   576→                        <SelectContent>
+   577→                          {filteredModels.map((m: FreeModel) => (
+   578→                            <SelectItem key={m.id} value={m.id}>
+   579→                              <span className="flex items-center gap-1.5">
+   580→                                {rateLimits[m.id]?.checkedAt ? (
+   581→                                  rateLimits[m.id]?.available
+   582→                                    ? <CheckCircle2 className="h-3 w-3 text-green-500" />
+   583→                                    : <XCircle className="h-3 w-3 text-red-500" />
+   584→                                ) : (
+   585→                                  <MinusCircle className="h-3 w-3 text-muted-foreground/40" />
+   586→                                )}
+   587→                                {m.label}
+   588→                              </span>
+   589→                            </SelectItem>
+   590→                          ))}
+   591→                        </SelectContent>
+   592→                      </Select>
+   593→                      <Button
+   594→                        variant="outline"
+   595→                        size="sm"
+   596→                        className="h-8 text-xs shrink-0 gap-1"
+   597→                        onClick={checkAllModels}
+   598→                        disabled={isCheckingAll || availableModels.length === 0}
+   599→                      >
+   600→                        {isCheckingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+   601→                        <span className="hidden sm:inline">Тест</span>
+   602→                      </Button>
+   603→                    </div>
+   604→                    {/* Model search */}
+   605→                    <div className="relative">
+   606→                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+   607→                      <Input
+   608→                        placeholder="Поиск модели..."
+   609→                        value={modelSearch}
+   610→                        onChange={(e) => setModelSearch(e.target.value)}
+   611→                        className="pl-7 h-7 text-[10px] sm:text-xs"
+   612→                      />
+   613→                    </div>
+   614→                  </div>
+   615→
+   616→                  {/* Model Status List (top 7) */}
+   617→                  {availableModels.length > 0 && (
+   618→                    <div className="space-y-1">
+   619→                      <div className="text-[10px] text-muted-foreground font-medium">Статус моделей:</div>
+   620→                      <div className="grid grid-cols-1 gap-0.5 max-h-36 overflow-y-auto">
+   621→                        {availableModels.slice(0, 7).map((m: FreeModel) => {
+   622→                          const rl = rateLimits[m.id]
+   623→                          return (
+   624→                            <button
+   625→                              key={m.id}
+   626→                              className={`flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-[10px] sm:text-xs hover:bg-accent transition-colors ${currentModel === m.id ? 'bg-accent/80 font-medium' : ''}`}
+   627→                              onClick={() => setCurrentModel(m.id)}
+   628→                            >
+   629→                              {rl?.checkedAt ? (
+   630→                                rl.available
+   631→                                  ? <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+   632→                                  : <XCircle className="h-3 w-3 text-red-500 shrink-0" />
+   633→                              ) : (
+   634→                                <MinusCircle className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+   635→                              )}
+   636→                              <span className="truncate flex-1">{m.label}</span>
+   637→                              {rl?.latency && (
+   638→                                <span className="text-[9px] text-muted-foreground shrink-0">{rl.latency}мс</span>
+   639→                              )}
+   640→                              {currentModel === m.id && (
+   641→                                <span className="text-[9px] text-primary shrink-0">&#9679;</span>
+   642→                              )}
+   643→                            </button>
+   644→                          )
+   645→                        })}
+   646→                      </div>
+   647→                    </div>
+   648→                  )}
+   649→                </div>
+   650→
+   651→                {/* API Key Warning */}
+   652→                {!apiToken && (
+   653→                  <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2">
+   654→                    <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+   655→                    <p className="text-xs text-destructive">Добавьте API ключ OpenRouter для генерации. Это бесплатно — получите ключ на openrouter.ai/keys</p>
+   656→                  </div>
+   657→                )}
+   658→
+   659→                {/* Generate Button */}
+   660→                <Button
+   661→                  size="lg"
+   662→                  className="w-full gap-2 text-sm sm:text-base h-11 sm:h-12"
+   663→                  onClick={handleGenerate}
+   664→                  disabled={isGenerating || !productInput.productName.trim() || !apiToken}
+   665→                >
+   666→                  {isGenerating ? (
+   667→                    <><Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />Генерация...</>
+   668→                  ) : !apiToken ? (
+   669→                    <><Key className="h-4 w-4 sm:h-5 sm:w-5" />Добавьте API ключ для генерации</>
+   670→                  ) : (
+   671→                    <><Sparkles className="h-4 w-4 sm:h-5 sm:w-5" />Сгенерировать карточку</>
+   672→                  )}
+   673→                </Button>
+   674→
+   675→                {/* Status line */}
+   676→                <p className="text-[10px] text-muted-foreground text-center">
+   677→                  {apiToken
+   678→                    ? `${currentModelLabel} \u2022 Fallback: автоматически`
+   679→                    : '\u26A0 Добавьте API ключ OpenRouter выше'}
+   680→                </p>
+   681→
+   682→                {/* Model info hint */}
+   683→                {usedModel && usedModel !== currentModel && (
+   684→                  <p className="text-[10px] text-muted-foreground text-center">
+   685→                    Использована резервная модель: {usedModel.split('/').pop()?.replace(':free', '')}
+   686→                  </p>
+   687→                )}
+   688→              </CardContent>
+   689→            </Card>
+   690→
+   691→            {/* Editable Text Section */}
+   692→            {generatedContent && (
+   693→              <Card className="mt-3 sm:mt-4 md:mt-6">
+   694→                <CardHeader className="pb-2 sm:pb-3 px-4 sm:px-6 pt-4 sm:pt-6">
+   695→                  <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+   696→                    <Type className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+   697→                    Редактировать текст карточки
+   698→                  </CardTitle>
+   699→                  <CardDescription className="text-xs">Изменения сразу отображаются на карточке</CardDescription>
+   700→                </CardHeader>
+   701→                <CardContent className="space-y-2 sm:space-y-3 px-4 sm:px-6 pb-4 sm:pb-6">
+   702→                  <div className="space-y-1">
+   703→                    <Label className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Заголовок</Label>
+   704→                    <Input value={generatedContent.title} onChange={(e) => updateContentField('title', e.target.value)} className="font-semibold text-sm" />
+   705→                  </div>
+   706→                  <div className="space-y-1">
+   707→                    <Label className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Подзаголовок</Label>
+   708→                    <Input value={generatedContent.subtitle} onChange={(e) => updateContentField('subtitle', e.target.value)} className="text-sm" />
+   709→                  </div>
+   710→                  <div className="space-y-1">
+   711→                    <Label className="text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground">Преимущества</Label>
+   712→                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+   713→                      {generatedContent.features.map((feature, index) => (
+   714→                        <Badge key={index} variant="secondary" className="gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm">
+   715→                          <CheckCircle2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary" />
+   716→                          <input
+   717→                            value={feature}
+   718→                            onChange={(e) => {
+   719→                              const newFeatures = [...generatedContent.features]
+   720→                              newFeatures[index] = e.target.value
+   721→                              updateContentField('features', newFeatures)
+   722→                            }}
+   723→                            className="w-auto min-w-[2rem] bg-transparent outline-none text-xs sm:text-sm"
+   724→                            style={{ width: `${Math.max(feature.length + 1, 4)}ch` }}
+   725→                          />
+   726→                        </Badge>
+   727→                      ))}
+   728→                    </div>
+   729→                  </div>
+   730→                </CardContent>
+   731→              </Card>
+   732→            )}
+   733→          </motion.div>
+   734→
+   735→          {/* RIGHT PANEL — Ready Card Preview */}
+   736→          <motion.div
+   737→            initial={{ opacity: 0, y: 10 }}
+   738→            animate={{ opacity: 1, y: 0 }}
+   739→            transition={{ duration: 0.3, delay: 0.1 }}
+   740→            className="space-y-3 sm:space-y-4"
+   741→          >
+   742→            <Card>
+   743→              <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6 pt-4 sm:pt-6">
+   744→                <div className="flex items-center justify-between">
+   745→                  <div>
+   746→                    <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+   747→                      <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+   748→                      Готовая карточка
+   749→                    </CardTitle>
+   750→                    <CardDescription className="text-xs sm:text-sm">
+   751→                      900×1200 • для WB, Ozon, Яндекс Маркет
+   752→                    </CardDescription>
+   753→                  </div>
+   754→                  {isGeneratingText && (
+   755→                    <div className="flex items-center gap-1.5 text-xs sm:text-sm text-muted-foreground">
+   756→                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+   757→                      <span className="hidden sm:inline">Генерация текста...</span>
+   758→                      <span className="sm:hidden">Генерация...</span>
+   759→                    </div>
+   760→                  )}
+   761→                </div>
+   762→              </CardHeader>
+   763→              <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
+   764→                {isCardVisible ? (
+   765→                  <div className="space-y-3 sm:space-y-4">
+   766→                    <div
+   767→                      ref={previewWrapperRef}
+   768→                      className="w-full overflow-hidden rounded-lg border bg-muted/30"
+   769→                    >
+   770→                      <div
+   771→                        style={{
+   772→                          position: 'relative',
+   773→                          width: '100%',
+   774→                          paddingBottom: `${(1200 / 900) * 100}%`,
+   775→                          overflow: 'hidden',
+   776→                        }}
+   777→                      >
+   778→                        <div
+   779→                          style={{
+   780→                            position: 'absolute',
+   781→                            top: 0,
+   782→                            left: 0,
+   783→                            width: '900px',
+   784→                            height: '1200px',
+   785→                            transform: `scale(${cardScale})`,
+   786→                            transformOrigin: 'top left',
+   787→                          }}
+   788→                        >
+   789→                          <div ref={cardRef}>
+   790→                            <ProductCard
+   791→                              productImage={productImageForCard}
+   792→                              title={generatedContent?.title || productInput.productName}
+   793→                              subtitle={generatedContent?.subtitle || ''}
+   794→                              features={generatedContent?.features || []}
+   795→                              style={productInput.style || 'minimalism'}
+   796→                              badge={selectedBadge === 'none' ? undefined : selectedBadge}
+   797→                            />
+   798→                          </div>
+   799→                        </div>
+   800→                      </div>
+   801→                    </div>
+   802→
+   803→                    {/* Action Buttons */}
+   804→                    <div className="flex gap-2 sm:gap-3">
+   805→                      <Button
+   806→                        className="flex-1 gap-1.5 sm:gap-2 text-xs sm:text-sm h-10 sm:h-11"
+   807→                        onClick={handleDownloadCard}
+   808→                        disabled={isGenerating || isDownloading || !productImageForCard}
+   809→                      >
+   810→                        {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+   811→                        Скачать PNG
+   812→                      </Button>
+   813→                      <Button
+   814→                        variant="outline"
+   815→                        className="flex-1 gap-1.5 sm:gap-2 text-xs sm:text-sm h-10 sm:h-11"
+   816→                        onClick={handleRegenerate}
+   817→                        disabled={isGenerating}
+   818→                      >
+   819→                        <RefreshCw className={`h-3.5 w-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
+   820→                        Перегенерировать
+   821→                      </Button>
+   822→                    </div>
+   823→                  </div>
+   824→                ) : (
+   825→                  <div className="flex flex-col items-center justify-center py-8 sm:py-12 md:py-16 rounded-lg border border-dashed bg-muted/20">
+   826→                    <ShoppingBag className="mb-3 h-10 w-10 sm:h-14 md:h-16 sm:w-14 md:w-16 text-muted-foreground/30" />
+   827→                    <p className="text-sm sm:text-base font-medium text-muted-foreground">
+   828→                      Готовая карточка появится здесь
+   829→                    </p>
+   830→                    <p className="mt-1 text-xs sm:text-sm text-muted-foreground/60">
+   831→                      Заполните данные и нажмите «Сгенерировать»
+   832→                    </p>
+   833→                  </div>
+   834→                )}
+   835→              </CardContent>
+   836→            </Card>
+   837→          </motion.div>
+   838→        </div>
+   839→      </main>
+   840→
+   841→      {/* Footer */}
+   842→      <footer className="border-t py-2.5 sm:py-3 md:py-4">
+   843→        <div className="mx-auto max-w-7xl px-3 text-center text-[10px] sm:text-xs text-muted-foreground sm:px-6 lg:px-8">
+   844→          E-Commerce Генератор by Azar
+   845→        </div>
+   846→      </footer>
+   847→
+   848→    </div>
+   849→  )
+   850→}
+   851→
