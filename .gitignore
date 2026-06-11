@@ -36,19 +36,28 @@ yarn-error.log*
 # vercel
 .vercel
 
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# dev & internal files
 local-*
 .claude
 .z-ai-config
 *.log
-dev.log
-dev.out.log
-test
-prompt
-
 server.log
-# Skills directory
 /skills/
+.zscripts/
+agent-ctx/
+tool-results/
+upload/
+download/
+db/
+prisma/
+examples/
+mini-services/
+Caddyfile
+bun.lock
+dive-into-llms-readme.json
+dev.log
+worklog.md
